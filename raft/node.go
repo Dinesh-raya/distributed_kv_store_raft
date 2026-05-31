@@ -2,11 +2,13 @@ package raft
 
 import (
 	"sync"
+	"time"
 )
 
 // RaftNode holds all state for a single Raft node.
 type RaftNode struct {
-	mu sync.Mutex
+	mu       sync.Mutex
+	stopOnce sync.Once
 
 	// Identity
 	id     int
@@ -147,7 +149,64 @@ func (rn *RaftNode) LastLogIndex() int {
 
 // Stop signals the node to shut down.
 func (rn *RaftNode) Stop() {
-	close(rn.quitCh)
+	rn.stopOnce.Do(func() {
+		close(rn.quitCh)
+	})
+}
+
+// Start begins the node's election timer loop.
+func (rn *RaftNode) Start() {
+	go rn.electionLoop()
+}
+
+// SetSendRequestVote sets the function used to send RequestVote RPCs.
+func (rn *RaftNode) SetSendRequestVote(fn func(int, *RequestVoteArgs, *RequestVoteReply)) {
+	rn.sendRequestVote = fn
+}
+
+// SetSendAppendEntries sets the function used to send AppendEntries RPCs.
+func (rn *RaftNode) SetSendAppendEntries(fn func(int, *AppendEntriesArgs, *AppendEntriesReply)) {
+	rn.sendAppendEntries = fn
+}
+
+// electionLoop runs the election timeout check.
+func (rn *RaftNode) electionLoop() {
+	for {
+		select {
+		case <-rn.quitCh:
+			return
+		default:
+		}
+
+		rn.mu.Lock()
+		state := rn.state
+		rn.mu.Unlock()
+
+		if state == Leader {
+			// Send heartbeats
+			for _, peerID := range rn.peers {
+				go rn.replicateToPeer(peerID)
+			}
+			time.Sleep(heartbeatInterval)
+		} else {
+			// Wait for election timeout
+			timeout := randomElectionTimeout()
+			select {
+			case <-rn.quitCh:
+				return
+			case <-time.After(timeout):
+			}
+
+			rn.mu.Lock()
+			isFollower := rn.state == Follower || rn.state == Candidate
+			rn.mu.Unlock()
+
+			if isFollower {
+				// Check if we received a heartbeat (simplified)
+				rn.startElection()
+			}
+		}
+	}
 }
 
 // propose and handleAppendEntries are implemented in replication.go.
