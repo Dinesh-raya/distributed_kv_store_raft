@@ -44,7 +44,7 @@ func TestHandleAppendEntries(t *testing.T) {
 		Entries: []LogEntry{
 			{Term: 1, Index: 0, Command: Command{Op: "SET", Key: "a", Value: "1"}},
 		},
-		LeaderCommit: 0,
+		LeaderCommit: -1,
 	}
 	reply := &AppendEntriesReply{}
 
@@ -71,7 +71,7 @@ func TestHandleAppendEntriesRejectsStaleTerm(t *testing.T) {
 		PrevLogIndex: -1,
 		PrevLogTerm:  0,
 		Entries:      nil,
-		LeaderCommit: 0,
+		LeaderCommit: -1,
 	}
 	reply := &AppendEntriesReply{}
 
@@ -96,7 +96,7 @@ func TestHandleAppendEntriesHigherTermStepsDown(t *testing.T) {
 		PrevLogIndex: -1,
 		PrevLogTerm:  0,
 		Entries:      nil,
-		LeaderCommit: 0,
+		LeaderCommit: -1,
 	}
 	reply := &AppendEntriesReply{}
 
@@ -134,11 +134,11 @@ func TestHandleAppendEntriesRejectsInconsistentLog(t *testing.T) {
 		LeaderId:     0,
 		Term:         1,
 		PrevLogIndex: 0,
-		PrevLogTerm:  2,
+		PrevLogTerm:  2, // our entry at index 0 has term 1, not 2
 		Entries: []LogEntry{
 			{Term: 1, Index: 1, Command: Command{Op: "SET", Key: "b", Value: "2"}},
 		},
-		LeaderCommit: 0,
+		LeaderCommit: -1,
 	}
 	reply2 := &AppendEntriesReply{}
 	node.handleAppendEntries(args2, reply2)
