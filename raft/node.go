@@ -142,6 +142,11 @@ func (rn *RaftNode) Propose(cmd Command) *LogEntry {
 	return rn.propose(cmd)
 }
 
+// ApplyCh returns the channel of committed entries for the state machine.
+func (rn *RaftNode) ApplyCh() chan ApplyMsg {
+	return rn.applyCh
+}
+
 // LastLogIndex exposes lastLogIndex for testing.
 func (rn *RaftNode) LastLogIndex() int {
 	rn.mu.Lock()

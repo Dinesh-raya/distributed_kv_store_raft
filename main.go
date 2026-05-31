@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/rpc"
 	"os"
 	"os/signal"
 	"syscall"
@@ -42,8 +43,66 @@ func main() {
 		log.Fatalf("Failed to start Raft RPC: %v", err)
 	}
 
+	// Wire up real RPC send functions
+	node.SetSendRequestVote(func(peerID int, args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) {
+		peerCfg := cfg.GetNode(peerID)
+		if peerCfg == nil {
+			return
+		}
+		client, err := rpc.Dial("tcp", peerCfg.Address)
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		client.Call("RaftRPC.RequestVote", args, reply)
+	})
+
+	node.SetSendAppendEntries(func(peerID int, args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) {
+		peerCfg := cfg.GetNode(peerID)
+		if peerCfg == nil {
+			return
+		}
+		client, err := rpc.Dial("tcp", peerCfg.Address)
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		client.Call("RaftRPC.AppendEntries", args, reply)
+	})
+
+	// Wire up real RPC send functions
+	node.SetSendRequestVote(func(peerID int, args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) {
+		peerCfg := cfg.GetNode(peerID)
+		if peerCfg == nil {
+			return
+		}
+		client, err := rpc.Dial("tcp", peerCfg.Address)
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		client.Call("RaftRPC.RequestVote", args, reply)
+	})
+
+	node.SetSendAppendEntries(func(peerID int, args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) {
+		peerCfg := cfg.GetNode(peerID)
+		if peerCfg == nil {
+			return
+		}
+		client, err := rpc.Dial("tcp", peerCfg.Address)
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		client.Call("RaftRPC.AppendEntries", args, reply)
+	})
+
+	// Start Raft node (election loop)
+	node.Start()
+
 	// Create and start client server
 	kvServer := server.NewKVServer(node)
+	kvServer.Start() // Start the apply loop
 	clientAddr := fmt.Sprintf("localhost:%d", 9001+*nodeID)
 	err = kvServer.StartClientServer(clientAddr)
 	if err != nil {
