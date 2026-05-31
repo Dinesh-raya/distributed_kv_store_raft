@@ -67,6 +67,12 @@ func (rn *RaftNode) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEn
 	}
 
 	reply.Success = true
+
+	// Signal heartbeat to reset election timer
+	select {
+	case rn.heartbeatCh <- struct{}{}:
+	default:
+	}
 }
 
 // replicateToPeer sends log entries to a single peer.

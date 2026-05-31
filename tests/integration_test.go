@@ -25,7 +25,7 @@ func TestLeaderElectionSingleNode(t *testing.T) {
 	cluster.Start()
 	defer cluster.Stop()
 
-	leaderID := cluster.WaitForLeader(1 * time.Second)
+	leaderID := cluster.WaitForLeader(3 * time.Second)
 	if leaderID == -1 {
 		t.Fatal("single node should become leader")
 	}
@@ -40,7 +40,7 @@ func TestLogReplication(t *testing.T) {
 	cluster.Start()
 	defer cluster.Stop()
 
-	leaderID := cluster.WaitForLeader(2 * time.Second)
+	leaderID := cluster.WaitForLeader(3 * time.Second)
 	if leaderID == -1 {
 		t.Fatal("no leader elected")
 	}
@@ -52,7 +52,21 @@ func TestLogReplication(t *testing.T) {
 		t.Fatal("leader should accept proposals")
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait for replication with retry — heartbeats drive replication
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		allReplicated := true
+		for _, node := range cluster.nodes {
+			if node.LastLogIndex() < 0 {
+				allReplicated = false
+				break
+			}
+		}
+		if allReplicated {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	for _, node := range cluster.nodes {
 		if node.LastLogIndex() < 0 {

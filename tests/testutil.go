@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 type TestCluster struct {
 	t     *testing.T
 	nodes []*raft.RaftNode
+	mu    sync.Mutex
 }
 
 // NewTestCluster creates a cluster of n nodes for testing.

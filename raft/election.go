@@ -80,6 +80,16 @@ func (rn *RaftNode) startElection() {
 	votes := 1 // vote for self
 	votesCh := make(chan bool, len(rn.peers))
 
+	// Check if self-vote is already a majority (single-node cluster)
+	if rn.hasMajority(votes) {
+		rn.mu.Lock()
+		if rn.state == Candidate && rn.currentTerm == term {
+			rn.becomeLeader()
+		}
+		rn.mu.Unlock()
+		return
+	}
+
 	// Request votes from all peers
 	for _, peerID := range rn.peers {
 		go func(peer int) {

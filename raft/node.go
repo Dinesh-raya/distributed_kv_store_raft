@@ -29,8 +29,9 @@ type RaftNode struct {
 	matchIndex map[int]int // for each peer, highest log entry known to be replicated
 
 	// Channels for signaling
-	applyCh chan ApplyMsg // committed entries sent here for state machine
-	quitCh  chan struct{}
+	applyCh     chan ApplyMsg // committed entries sent here for state machine
+	quitCh      chan struct{}
+	heartbeatCh chan struct{} // signal when heartbeat received
 
 	// Function fields for testability (overridden in tests)
 	sendRequestVote   func(int, *RequestVoteArgs, *RequestVoteReply)
@@ -59,6 +60,7 @@ func NewNode(id int, peers []int) *RaftNode {
 		matchIndex:  make(map[int]int),
 		applyCh:     make(chan ApplyMsg, 100),
 		quitCh:      make(chan struct{}),
+		heartbeatCh: make(chan struct{}, 100),
 		sendRequestVote:   func(int, *RequestVoteArgs, *RequestVoteReply) {},
 		sendAppendEntries: func(int, *AppendEntriesArgs, *AppendEntriesReply) {},
 	}
@@ -154,9 +156,9 @@ func (rn *RaftNode) Stop() {
 	})
 }
 
-// Start begins the node's election timer loop.
+// Start begins the node's main run loop.
 func (rn *RaftNode) Start() {
-	go rn.electionLoop()
+	go rn.run()
 }
 
 // SetSendRequestVote sets the function used to send RequestVote RPCs.
@@ -169,8 +171,8 @@ func (rn *RaftNode) SetSendAppendEntries(fn func(int, *AppendEntriesArgs, *Appen
 	rn.sendAppendEntries = fn
 }
 
-// electionLoop runs the election timeout check.
-func (rn *RaftNode) electionLoop() {
+// run is the main loop for the Raft node.
+func (rn *RaftNode) run() {
 	for {
 		select {
 		case <-rn.quitCh:
@@ -183,17 +185,28 @@ func (rn *RaftNode) electionLoop() {
 		rn.mu.Unlock()
 
 		if state == Leader {
-			// Send heartbeats
+			// Send heartbeats / replicate
+			var wg sync.WaitGroup
 			for _, peerID := range rn.peers {
-				go rn.replicateToPeer(peerID)
+				wg.Add(1)
+				go func(pid int) {
+					defer wg.Done()
+					rn.replicateToPeer(pid)
+				}(peerID)
 			}
+			wg.Wait()
+			rn.advanceCommitIndex()
+			rn.applyCommittedEntries()
 			time.Sleep(heartbeatInterval)
 		} else {
-			// Wait for election timeout
+			// Wait for election timeout or heartbeat
 			timeout := randomElectionTimeout()
 			select {
 			case <-rn.quitCh:
 				return
+			case <-rn.heartbeatCh:
+				// Received heartbeat — reset timer, stay follower
+				continue
 			case <-time.After(timeout):
 			}
 
@@ -202,7 +215,6 @@ func (rn *RaftNode) electionLoop() {
 			rn.mu.Unlock()
 
 			if isFollower {
-				// Check if we received a heartbeat (simplified)
 				rn.startElection()
 			}
 		}

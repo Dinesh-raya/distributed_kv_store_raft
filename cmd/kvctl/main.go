@@ -27,7 +27,7 @@ func main() {
 	}
 	defer client.Close()
 
-	fmt.Println("Connected! Commands: SET <key> <value>, GET <key>, DELETE <key>, QUIT")
+	fmt.Println("Connected! Commands: SET <key> <value>, GET <key>, DELETE <key>, STATUS, QUIT")
 	fmt.Println()
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -106,9 +106,12 @@ func main() {
 				fmt.Printf("Error: %s\n", reply.Error)
 			}
 
+		case "STATUS":
+			fmt.Println("STATUS command not yet implemented")
+
 		default:
 			fmt.Printf("Unknown command: %s\n", command)
-			fmt.Println("Commands: SET, GET, DELETE, QUIT")
+			fmt.Println("Commands: SET, GET, DELETE, STATUS, QUIT")
 		}
 	}
 }
