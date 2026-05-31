@@ -29,6 +29,10 @@ type RaftNode struct {
 	// Channels for signaling
 	applyCh chan ApplyMsg // committed entries sent here for state machine
 	quitCh  chan struct{}
+
+	// Function fields for testability (overridden in tests)
+	sendRequestVote   func(int, *RequestVoteArgs, *RequestVoteReply)
+	sendAppendEntries func(int, *AppendEntriesArgs, *AppendEntriesReply)
 }
 
 // ApplyMsg is sent on applyCh when a log entry is committed.
@@ -53,6 +57,8 @@ func NewNode(id int, peers []int) *RaftNode {
 		matchIndex:  make(map[int]int),
 		applyCh:     make(chan ApplyMsg, 100),
 		quitCh:      make(chan struct{}),
+		sendRequestVote:   func(int, *RequestVoteArgs, *RequestVoteReply) {},
+		sendAppendEntries: func(int, *AppendEntriesArgs, *AppendEntriesReply) {},
 	}
 }
 
@@ -105,7 +111,110 @@ func (rn *RaftNode) lastLogTerm() int {
 	return rn.log[len(rn.log)-1].Term
 }
 
+// ID returns the node's ID.
+func (rn *RaftNode) ID() int {
+	return rn.id
+}
+
+// IsLeader returns true if this node is the leader.
+func (rn *RaftNode) IsLeader() bool {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	return rn.state == Leader
+}
+
+// HandleRequestVote exposes handleRequestVote for testing.
+func (rn *RaftNode) HandleRequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rn.handleRequestVote(args, reply)
+}
+
+// HandleAppendEntries exposes handleAppendEntries for testing.
+func (rn *RaftNode) HandleAppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rn.handleAppendEntries(args, reply)
+}
+
+// Propose exposes propose for testing.
+func (rn *RaftNode) Propose(cmd Command) *LogEntry {
+	return rn.propose(cmd)
+}
+
+// LastLogIndex exposes lastLogIndex for testing.
+func (rn *RaftNode) LastLogIndex() int {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	return rn.lastLogIndex()
+}
+
 // Stop signals the node to shut down.
 func (rn *RaftNode) Stop() {
 	close(rn.quitCh)
+}
+
+// handleAppendEntries handles an incoming AppendEntries RPC.
+// Stub implementation -- will be fully implemented in the log replication task.
+func (rn *RaftNode) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
+	reply.Term = rn.currentTerm
+	reply.Success = false
+
+	// Reject if term is stale
+	if args.Term < rn.currentTerm {
+		return
+	}
+
+	// Step down if we see a higher term
+	if args.Term > rn.currentTerm {
+		rn.becomeFollower(args.Term)
+	}
+
+	// Reject if log doesn't contain an entry at prevLogIndex with prevLogTerm
+	if args.PrevLogIndex >= 0 {
+		if args.PrevLogIndex >= len(rn.log) {
+			return
+		}
+		if rn.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+			return
+		}
+	}
+
+	// Append entries
+	for i, entry := range args.Entries {
+		idx := args.PrevLogIndex + 1 + i
+		if idx < len(rn.log) {
+			if rn.log[idx].Term != entry.Term {
+				rn.log = rn.log[:idx]
+				rn.log = append(rn.log, entry)
+			}
+		} else {
+			rn.log = append(rn.log, entry)
+		}
+	}
+
+	// Update commit index
+	if args.LeaderCommit > rn.commitIndex {
+		lastNewEntry := args.PrevLogIndex + len(args.Entries)
+		if args.LeaderCommit < lastNewEntry {
+			rn.commitIndex = args.LeaderCommit
+		} else {
+			rn.commitIndex = lastNewEntry
+		}
+	}
+
+	reply.Success = true
+}
+
+// propose adds a command to the leader's log.
+// Returns nil if this node is not the leader.
+func (rn *RaftNode) propose(cmd Command) *LogEntry {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+
+	if rn.state != Leader {
+		return nil
+	}
+
+	entry := rn.appendLogEntry(cmd, rn.currentTerm)
+	return &entry
 }
