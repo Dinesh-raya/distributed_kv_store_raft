@@ -11,9 +11,7 @@ import (
 
 // KVServer is the client-facing server that routes commands through Raft.
 type KVServer struct {
-	node     *raft.RaftNode
-	store    *raft.ApplyMsg // we'll use the apply channel instead
-	leaderID int            // current known leader (-1 if unknown)
+	node *raft.RaftNode
 }
 
 // NewKVServer creates a new client-facing server.
@@ -33,7 +31,6 @@ func (s *KVServer) SubmitCommand(cmd raft.Command, reply *raft.ClientResponse) e
 	// 3. Wait for it to be committed
 	// 4. Return the result
 
-	// This is a placeholder that will be filled in when we wire everything together
 	reply.Success = false
 	reply.Error = "not implemented yet"
 	return nil
