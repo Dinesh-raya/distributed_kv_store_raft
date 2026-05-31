@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 type TestCluster struct {
 	t     *testing.T
 	nodes []*raft.RaftNode
-	mu    sync.Mutex
 }
 
 // NewTestCluster creates a cluster of n nodes for testing.
@@ -48,16 +46,14 @@ func NewTestCluster(t *testing.T, n int) *TestCluster {
 // wireRPCs connects the nodes so they can call each other's RPC handlers directly.
 func (tc *TestCluster) wireRPCs() {
 	for _, node := range tc.nodes {
-		nodeID := node.ID()
-
-		node.SetSendRequestVote(func(peerID int, args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) {
+		n := node
+		n.SetSendRequestVote(func(peerID int, args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) {
 			tc.nodes[peerID].HandleRequestVote(args, reply)
 		})
 
-		node.SetSendAppendEntries(func(peerID int, args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) {
+		n.SetSendAppendEntries(func(peerID int, args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) {
 			tc.nodes[peerID].HandleAppendEntries(args, reply)
 		})
-		_ = nodeID
 	}
 }
 
